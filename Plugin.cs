@@ -1,17 +1,13 @@
-﻿using System;
-using System.IO;
-using System.Reflection;
-using BepInEx;
+﻿using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
 using ItemManager;
 using JetBrains.Annotations;
 using ServerSync;
-using UnityEngine;
-using System.Collections.Generic;
-using System.Linq;
-using System.Collections;
+using System;
+using System.IO;
+using System.Reflection;
 
 namespace TeqHealingStaff
 {
@@ -33,40 +29,39 @@ namespace TeqHealingStaff
             BepInEx.Logging.Logger.CreateLogSource(ModName);
 
         private static readonly ConfigSync ConfigSync = new(ModGUID)
-            { DisplayName = ModName, CurrentVersion = ModVersion, MinimumRequiredVersion = ModVersion };
+        { DisplayName = ModName, CurrentVersion = ModVersion, MinimumRequiredVersion = ModVersion };
 
         public enum Toggle
         {
             On = 1,
             Off = 0
         }
-        
+
         public void Awake()
         {
             _serverConfigLocked = config("1 - General", "Lock Configuration", Toggle.On,
                 "If on, the configuration is locked and can be changed by server admins only.");
             _ = ConfigSync.AddLockingConfigEntry(_serverConfigLocked);
-            
-            Item teqHealingStaff = new("teq_sur_healing_staff_bundle", "teq_sur_healing_staff_new");  
-                                                                                                   
 
-            teqHealingStaff.Name.English("Healing Staff"); 
+            string defaultEnglishName = "Healing Staff";
+            Item teqHealingStaff = new("teq_sur_healing_staff_bundle", "teq_sur_healing_staff_new", defaultEnglishName);
+
+            PatchHealingStats(teqHealingStaff);
+
+            teqHealingStaff.Name.English(defaultEnglishName);
             teqHealingStaff.Description.English("A healing staff.");
-            teqHealingStaff.Crafting.Add("forge", 1); 
+            teqHealingStaff.Crafting.Add("forge", 1);
             teqHealingStaff.RequiredItems.Add("Iron", 120);
             teqHealingStaff.RequiredItems.Add("WolfFang", 20);
             teqHealingStaff.RequiredItems.Add("Silver", 40);
-            teqHealingStaff.RequiredUpgradeItems.Add("Iron", 20); 
-            teqHealingStaff.RequiredUpgradeItems.Add("Silver",
-                10); 
-            teqHealingStaff.CraftAmount = 1; 
+            teqHealingStaff.RequiredUpgradeItems.Add("Iron", 20);
+            teqHealingStaff.RequiredUpgradeItems.Add("Silver", 10);
+            teqHealingStaff.CraftAmount = 1;
 
-
-            ItemManager.PrefabManager.RegisterPrefab(PrefabManager.RegisterAssetBundle("teq_sur_healing_staff_bundle"), "teq_sur_vfx_blocked", false); 
+            ItemManager.PrefabManager.RegisterPrefab(PrefabManager.RegisterAssetBundle("teq_sur_healing_staff_bundle"), "teq_sur_vfx_blocked", false);
             ItemManager.PrefabManager.RegisterPrefab(PrefabManager.RegisterAssetBundle("teq_sur_healing_staff_bundle"), "teq_sur_healing_aoe", false);
             ItemManager.PrefabManager.RegisterPrefab(PrefabManager.RegisterAssetBundle("teq_sur_healing_staff_bundle"), "teq_sur_fx_shield_start", false);
 
-            
             Assembly assembly = Assembly.GetExecutingAssembly();
             _harmony.PatchAll(assembly);
             SetupWatcher();
@@ -74,11 +69,36 @@ namespace TeqHealingStaff
 
         // START HEALING STATS //
 
+        private static void PatchHealingStats(Item item)
+        {
+            var drop = item.Prefab.GetComponent<ItemDrop>();
 
+            if (drop == null)
+            {
+                return;
+            }
 
+            var shared = drop.m_itemData.m_shared;
+
+            if (shared == null)
+            {
+                return;
+            }
+
+            if (shared.m_attackStatusEffect is SE_Stats se_stats)
+            {
+                var customHeal = SE_ScalingHeal.ConvertSEStatsToCustomHeal(se_stats, ScalingHealFunction);
+
+                shared.m_attackStatusEffect = customHeal;
+            }
+        }
+
+        private static float ScalingHealFunction(float skillLevel)
+        {
+            return skillLevel / 5f;
+        }
 
         // END HEALING STATS //
-
 
         private void OnDestroy()
         {
@@ -110,7 +130,6 @@ namespace TeqHealingStaff
                 TeqHealingStaffLogger.LogError("Please check your config entries for spelling and format!");
             }
         }
-
 
         #region ConfigOptions
 
@@ -148,6 +167,6 @@ namespace TeqHealingStaff
             [UsedImplicitly] public Action<ConfigEntryBase>? CustomDrawer;
         }
 
-        #endregion
+        #endregion ConfigOptions
     }
 }
